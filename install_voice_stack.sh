@@ -432,6 +432,19 @@ print_header() {
 check_prerequisites() {
   log "Vérification des prérequis système..."
   
+  # Vérifier qu'on n'est pas sur un hôte Proxmox
+  if [[ -f /etc/pve/.version ]] || command -v qm >/dev/null 2>&1; then
+    echo "${COLOR_RED}[ERREUR CRITIQUE] Ce script ne doit PAS être exécuté sur l'hôte Proxmox !${COLOR_RESET}" >&2
+    echo "${COLOR_RED}Vous devez d'abord créer une VM, puis exécuter ce script DANS la VM.${COLOR_RESET}" >&2
+    echo "" >&2
+    echo "${COLOR_YELLOW}Étapes correctes :${COLOR_RESET}" >&2
+    echo "${COLOR_YELLOW}1. Créer une VM avec : curl -fsSL https://raw.githubusercontent.com/Sdavid66/clone_voice/main/create_voice_clone_vm.sh | sudo bash${COLOR_RESET}" >&2
+    echo "${COLOR_YELLOW}2. Installer Ubuntu dans la VM${COLOR_RESET}" >&2
+    echo "${COLOR_YELLOW}3. Exécuter ce script DANS la VM Ubuntu${COLOR_RESET}" >&2
+    echo "" >&2
+    exit 1
+  fi
+  
   # Vérification de la distribution
   if [[ ! -f /etc/os-release ]]; then
     log "ERREUR: Impossible de détecter la distribution système"

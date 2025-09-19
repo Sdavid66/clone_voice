@@ -317,7 +317,7 @@ Créée le $(date '+%Y-%m-%d %H:%M:%S') par create_voice_clone_vm.sh"
 show_summary() {
   cat <<EOF
 
-${COLOR_BOLD}=== Résumé de la VM créée ===${COLOR_RESET}
+${COLOR_BOLD}=== VM '${VM_NAME}' créée avec succès ===${COLOR_RESET}
 
 ${COLOR_BLUE}Nom de la VM:${COLOR_RESET} ${VM_NAME}
 ${COLOR_BLUE}VMID:${COLOR_RESET} ${VM_VMID}
@@ -327,30 +327,37 @@ ${COLOR_BLUE}Disque:${COLOR_RESET} ${VM_DISK_SIZE}GB sur ${VM_STORAGE}
 ${COLOR_BLUE}Réseau:${COLOR_RESET} ${VM_BRIDGE}
 ${COLOR_BLUE}ISO:${COLOR_RESET} ${VM_ISO##*/}
 
-${COLOR_BOLD}Prochaines étapes:${COLOR_RESET}
+${COLOR_BOLD}⚠️  IMPORTANT: Cette VM est vide et doit être configurée${COLOR_RESET}
+
+${COLOR_BOLD}Étapes suivantes obligatoires:${COLOR_RESET}
 
 1. ${COLOR_GREEN}Démarrer la VM:${COLOR_RESET}
    qm start ${VM_VMID}
 
-2. ${COLOR_GREEN}Accéder à la console:${COLOR_RESET}
-   Via l'interface web Proxmox ou:
-   qm monitor ${VM_VMID}
+2. ${COLOR_GREEN}Ouvrir la console VM (pas le shell Proxmox!):${COLOR_RESET}
+   - Via l'interface web: Datacenter > ${VM_NAME} > Console
+   - Ou: qm terminal ${VM_VMID}
 
-3. ${COLOR_GREEN}Installer Ubuntu:${COLOR_RESET}
-   - Suivre l'installation standard Ubuntu
-   - Créer un utilisateur avec sudo
+3. ${COLOR_GREEN}Installer Ubuntu dans la VM:${COLOR_RESET}
+   - Suivre l'installation Ubuntu standard
+   - Créer un utilisateur avec privilèges sudo
    - Installer openssh-server pour l'accès distant
 
-4. ${COLOR_GREEN}Installer la stack de clonage de voix:${COLOR_RESET}
+4. ${COLOR_GREEN}Une fois Ubuntu installé DANS LA VM:${COLOR_RESET}
+   Se connecter à la VM (pas à Proxmox!) et exécuter:
+   
    curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh" \\
      | sudo bash -s -- --install-ollama --dir /opt/voice-stack
 
-${COLOR_BOLD}Commandes utiles:${COLOR_RESET}
+${COLOR_BOLD}⚠️  NE PAS exécuter le script d'installation sur l'hôte Proxmox!${COLOR_RESET}
+${COLOR_BOLD}Il doit être exécuté DANS la VM après installation d'Ubuntu.${COLOR_RESET}
+
+${COLOR_BOLD}Commandes de gestion VM:${COLOR_RESET}
 - Démarrer: qm start ${VM_VMID}
 - Arrêter: qm stop ${VM_VMID}
-- Redémarrer: qm reboot ${VM_VMID}
+- Console: qm terminal ${VM_VMID}
 - Statut: qm status ${VM_VMID}
-- Configuration: qm config ${VM_VMID}
+- Supprimer: qm destroy ${VM_VMID}
 
 EOF
 }
