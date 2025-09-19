@@ -169,7 +169,9 @@ ensure_packages() {
     git \
     gnupg \
     lsb-release \
-    python3-pip
+    python3-pip \
+    software-properties-common \
+    apt-transport-https
 }
 
 install_docker() {
@@ -186,10 +188,25 @@ install_docker() {
   fi
   chmod a+r /etc/apt/keyrings/docker.gpg
 
+  # Détection automatique de la distribution (Ubuntu/Debian)
   . /etc/os-release
+  
+  # Utilise le bon codename selon la distribution
+  if [[ "${ID}" == "ubuntu" ]]; then
+    DISTRO_CODENAME="${UBUNTU_CODENAME}"
+    DISTRO_NAME="ubuntu"
+  elif [[ "${ID}" == "debian" ]]; then
+    DISTRO_CODENAME="${VERSION_CODENAME}"
+    DISTRO_NAME="debian"
+  else
+    log "Distribution non supportée: ${ID}. Tentative avec ubuntu..."
+    DISTRO_CODENAME="jammy"
+    DISTRO_NAME="ubuntu"
+  fi
+
   echo \
-"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-${UBUNTU_CODENAME} stable" \
+"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DISTRO_NAME} \
+${DISTRO_CODENAME} stable" \
     | tee /etc/apt/sources.list.d/docker.list >/dev/null
 
   log "Installation de Docker Engine + plugin Compose..."
@@ -229,6 +246,26 @@ install_ollama() {
     log "Installation d'Ollama (mode CPU)..."
     # L'installeur gère automatiquement la détection GPU/CPU. Aucune interaction requise.
     curl -fsSL https://ollama.com/install.sh | sh
+    
+    # Démarrage du service Ollama
+    systemctl enable --now ollama 2>/dev/null || true
+  fi
+
+  # Attendre que le service soit prêt
+  local max_attempts=30
+  local attempt=0
+  while [[ $attempt -lt $max_attempts ]]; do
+    if ollama list >/dev/null 2>&1; then
+      break
+    fi
+    log "Attente du démarrage d'Ollama... ($((attempt + 1))/$max_attempts)"
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  if [[ $attempt -eq $max_attempts ]]; then
+    log "AVERTISSEMENT: Ollama ne répond pas, le téléchargement du modèle sera ignoré"
+    return 0
   fi
 
   if ! ollama list | grep -qw mistral; then
@@ -332,11 +369,24 @@ build_and_launch_xtts() {
     return 0
   fi
 
+  # Vérification que Docker Compose est disponible
+  if ! command -v docker >/dev/null 2>&1; then
+    log "ERREUR: Docker n'est pas disponible"
+    return 1
+  fi
+
+  # Test de la commande docker compose
+  if ! docker compose version >/dev/null 2>&1; then
+    log "ERREUR: Docker Compose plugin n'est pas disponible"
+    return 1
+  fi
+
   log "Construction de l'image XTTS (CPU)..."
-  docker compose -f "${XTTS_DIR}/docker-compose.yml" build
+  cd "${XTTS_DIR}" || return 1
+  docker compose build
 
   log "Lancement du service XTTS (FastAPI) en arrière-plan..."
-  docker compose -f "${XTTS_DIR}/docker-compose.yml" up -d
+  docker compose up -d
 }
 
 post_summary() {
@@ -379,7 +429,46 @@ print_header() {
   printf '\n'
 }
 
+check_prerequisites() {
+  log "Vérification des prérequis système..."
+  
+  # Vérification de la distribution
+  if [[ ! -f /etc/os-release ]]; then
+    log "ERREUR: Impossible de détecter la distribution système"
+    return 1
+  fi
+  
+  . /etc/os-release
+  if [[ "${ID}" != "ubuntu" && "${ID}" != "debian" ]]; then
+    log "AVERTISSEMENT: Distribution ${ID} non officiellement supportée"
+    log "Le script tentera de continuer avec les paramètres Ubuntu"
+  fi
+  
+  # Vérification de l'architecture
+  local arch
+  arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
+  if [[ "${arch}" != "amd64" && "${arch}" != "x86_64" ]]; then
+    log "AVERTISSEMENT: Architecture ${arch} non testée"
+  fi
+  
+  # Vérification de l'espace disque (minimum 2GB)
+  local available_space
+  available_space=$(df / | awk 'NR==2 {print $4}')
+  if [[ "${available_space}" -lt 2097152 ]]; then
+    log "AVERTISSEMENT: Espace disque faible (< 2GB disponible)"
+  fi
+  
+  # Vérification de la connectivité internet
+  if ! curl -s --connect-timeout 5 https://google.com >/dev/null; then
+    log "ERREUR: Pas de connectivité internet détectée"
+    return 1
+  fi
+  
+  log "Prérequis système validés"
+}
+
 STEPS=(
+  "Vérification des prérequis système:::check_prerequisites"
   "Installation des dépendances système:::ensure_packages"
   "Installation ou vérification de Docker:::install_docker"
   "Configuration du groupe Docker:::configure_docker_group"
