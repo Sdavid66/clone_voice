@@ -200,9 +200,9 @@ check_prerequisites() {
 find_next_vmid() {
   if [[ -n "${VM_VMID}" ]]; then
     log "Utilisation du VMID spécifié: ${VM_VMID}"
-    # Vérifier que le VMID n'est pas déjà utilisé
-    if qm status "${VM_VMID}" >/dev/null 2>&1; then
-      error "Le VMID ${VM_VMID} est déjà utilisé."
+    # Vérifier que le VMID n'est pas déjà utilisé (VM ou CT)
+    if qm status "${VM_VMID}" >/dev/null 2>&1 || pct status "${VM_VMID}" >/dev/null 2>&1; then
+      error "Le VMID ${VM_VMID} est déjà utilisé par une VM ou un conteneur."
       exit 1
     fi
     return
@@ -210,9 +210,14 @@ find_next_vmid() {
   
   log "Recherche du prochain VMID libre..."
   
-  # Obtenir la liste des VMIDs existants
+  # Obtenir la liste des VMIDs existants (VMs et conteneurs)
   local existing_vmids
-  existing_vmids=$(qm list | awk 'NR>1 {print $1}' | sort -n)
+  existing_vmids=$(
+    {
+      qm list 2>/dev/null | awk 'NR>1 {print $1}'
+      pct list 2>/dev/null | awk 'NR>1 {print $1}'
+    } | sort -n | uniq
+  )
   
   # Commencer à partir de 100 et trouver le premier ID libre
   for ((i=100; i<=999; i++)); do
@@ -224,7 +229,7 @@ find_next_vmid() {
   
   if [[ -z "${VM_VMID}" ]]; then
     error "Impossible de trouver un VMID libre entre 100 et 999."
-    error "VMIDs existants: ${existing_vmids}"
+    error "VMIDs existants (VMs et conteneurs): ${existing_vmids}"
     exit 1
   fi
   
