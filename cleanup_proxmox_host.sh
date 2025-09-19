@@ -250,7 +250,7 @@ EOF
 }
 
 main() {
-  printf '%s=== Nettoyage de l'\''hôte Proxmox ===%s\n\n' "${COLOR_BOLD}" "${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}=== Nettoyage de l'hôte Proxmox ===${COLOR_RESET}\n"
   
   check_prerequisites
   confirm_cleanup
