@@ -68,5 +68,4 @@ Les messages détaillés apparaissent sous chaque étape avec un horodatage.
 
 ## Ressources complémentaires
 
-- Pour un déploiement automatique d'une VM T-Pot basée sur l'ISO officiel, consultez [`README_TPOT_ISO.md`](README_TPOT_ISO.md).
 - Le script `install_voice_stack.sh` peut être adapté pour d'autres environnements (Debian 12, etc.) en ajustant les dépendances.
