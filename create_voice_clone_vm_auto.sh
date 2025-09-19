@@ -229,9 +229,17 @@ packages:
 runcmd:
   - systemctl enable ssh
   - systemctl start ssh
-  - echo "Installation de la stack de clonage de voix..." > /tmp/voice-install.log
-  - curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh" | sudo bash -s -- --install-ollama --dir /opt/voice-stack >> /tmp/voice-install.log 2>&1
-  - echo "Installation terminée" >> /tmp/voice-install.log
+  - echo "Début installation stack de clonage de voix - $(date)" > /tmp/voice-install.log
+  - sleep 30
+  - echo "Téléchargement du script d'installation..." >> /tmp/voice-install.log 2>&1
+  - wget -O /tmp/install_voice_stack.sh "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh" >> /tmp/voice-install.log 2>&1
+  - chmod +x /tmp/install_voice_stack.sh
+  - echo "Exécution du script d'installation..." >> /tmp/voice-install.log 2>&1
+  - /tmp/install_voice_stack.sh --install-ollama --dir /opt/voice-stack >> /tmp/voice-install.log 2>&1 || echo "ERREUR lors de l'installation" >> /tmp/voice-install.log 2>&1
+  - echo "Démarrage des services..." >> /tmp/voice-install.log 2>&1
+  - cd /opt/voice-stack/xtts && docker compose up -d >> /tmp/voice-install.log 2>&1 || echo "ERREUR démarrage Docker" >> /tmp/voice-install.log 2>&1
+  - systemctl start ollama >> /tmp/voice-install.log 2>&1 || echo "ERREUR démarrage Ollama" >> /tmp/voice-install.log 2>&1
+  - echo "Installation terminée - $(date)" >> /tmp/voice-install.log
 
 final_message: |
   VM voice-clone prête !
