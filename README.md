@@ -9,7 +9,8 @@ Un suivi de progression en couleur est intégré pour visualiser chaque étape (
 > ⚠️ L'exécution doit se faire avec les privilèges `root` ou via `sudo`.
 
 ```bash
-sudo bash <(curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh?nocache=$(date +%s)")
+curl -fsSL "https://raw.githubusercontent.com/sdavid66/clone_voice/main/install_voice_stack.sh?nocache=$(date +%s)" \
+  | sudo bash -s --
 ```
 
 Le script détecte automatiquement :
@@ -19,19 +20,20 @@ Le script détecte automatiquement :
 
 ### Personnalisation via variables d'environnement
 
-Exportez les variables avant l'exécution (en local ou via `sudo VAR=value ... bash <(curl ...)`).
+Le script accepte à la fois des variables d'environnement **et** des options en ligne de commande.
+Les options ont priorité sur les variables (pratique pour l'exécution en "one-liner").
 
-| Variable | Valeur par défaut | Description |
+| Option CLI | Variable associée | Description |
 | --- | --- | --- |
-| `VOICE_STACK_DIR` | `~/voice-stack` | Répertoire d'installation (contient `xtts/`). |
-| `START_CONTAINERS` | `true` | `true` pour lancer `docker compose up -d` à la fin, `false` pour générer les fichiers uniquement. |
-| `INSTALL_OLLAMA` | `false` | `true` pour installer Ollama (mode CPU) et télécharger le modèle `mistral`. |
+| `--dir <chemin>` | `VOICE_STACK_DIR` | Répertoire d'installation (contient `xtts/`). |
+| `--no-start` / `--start` | `START_CONTAINERS` | `--no-start` pour générer les fichiers uniquement, `--start` pour forcer le lancement. |
+| `--install-ollama` / `--no-ollama` | `INSTALL_OLLAMA` | Active/désactive l'installation d'Ollama (mode CPU) et le téléchargement du modèle `mistral`. |
 
 Exemple : ne pas démarrer le service immédiatement et installer Ollama dans `/opt/voice-stack` :
 
 ```bash
-sudo INSTALL_OLLAMA=true START_CONTAINERS=false VOICE_STACK_DIR=/opt/voice-stack \
-  bash <(curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh?nocache=$(date +%s)")
+curl -fsSL "https://raw.githubusercontent.com/sdavid66/clone_voice/main/install_voice_stack.sh?nocache=$(date +%s)" \
+  | sudo bash -s -- --install-ollama --no-start --dir /opt/voice-stack
 ```
 
 ### Exécution locale (script déjà téléchargé)
