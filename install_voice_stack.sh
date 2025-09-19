@@ -485,7 +485,8 @@ main() {
 
   local entry description func
   for entry in "${STEPS[@]}"; do
-    IFS=':::' read -r description func <<<"${entry}"
+    description="${entry%:::*}"
+    func="${entry#*:::}"
     run_step "${description}" "${func}"
   done
 }
