@@ -40,7 +40,7 @@ else
 fi
 
 # Configuration par défaut
-VM_NAME="voice_clone"
+VM_NAME="voice-clone"
 VM_MEMORY=8192      # 8GB RAM
 VM_CORES=4          # 4 cœurs CPU
 VM_DISK_SIZE=50     # 50GB disque
@@ -210,9 +210,13 @@ find_next_vmid() {
   
   log "Recherche du prochain VMID libre..."
   
+  # Obtenir la liste des VMIDs existants
+  local existing_vmids
+  existing_vmids=$(qm list | awk 'NR>1 {print $1}' | sort -n)
+  
   # Commencer à partir de 100 et trouver le premier ID libre
   for ((i=100; i<=999; i++)); do
-    if ! qm status "$i" >/dev/null 2>&1; then
+    if ! echo "${existing_vmids}" | grep -q "^${i}$"; then
       VM_VMID="$i"
       break
     fi
@@ -220,6 +224,7 @@ find_next_vmid() {
   
   if [[ -z "${VM_VMID}" ]]; then
     error "Impossible de trouver un VMID libre entre 100 et 999."
+    error "VMIDs existants: ${existing_vmids}"
     exit 1
   fi
   
@@ -300,16 +305,16 @@ create_vm() {
     --vga qxl \
     --tablet 1 \
     --agent enabled=1 \
-    --description "VM optimisée pour le clonage de voix avec XTTS v2 et Ollama
-    
+    --description "VM optimisee pour le clonage de voix avec XTTS v2 et Ollama
+
 Configuration:
 - RAM: ${VM_MEMORY}MB ($(( VM_MEMORY / 1024 ))GB)
-- CPU: ${VM_CORES} cœurs
+- CPU: ${VM_CORES} coeurs
 - Disque: ${VM_DISK_SIZE}GB
-- Réseau: ${VM_BRIDGE}
+- Reseau: ${VM_BRIDGE}
 - OS: Ubuntu (via ${VM_ISO##*/})
 
-Créée le $(date '+%Y-%m-%d %H:%M:%S') par create_voice_clone_vm.sh"
+Creee le $(date '+%Y-%m-%d %H:%M:%S') par create_voice_clone_vm.sh"
 
   success "VM '${VM_NAME}' créée avec succès (ID: ${VM_VMID})"
 }
