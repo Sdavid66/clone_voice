@@ -9,7 +9,7 @@ Un suivi de progression en couleur est intégré pour visualiser chaque étape (
 > ⚠️ L'exécution doit se faire avec les privilèges `root` ou via `sudo`.
 
 ```bash
-sudo bash <(curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh?nocache=$(date +%s)")
+sudo bash <(curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/HEAD/install_voice_stack.sh?nocache=$(date +%s)")
 ```
 
 Le script détecte automatiquement :
@@ -31,7 +31,7 @@ Exemple : ne pas démarrer le service immédiatement et installer Ollama dans `/
 
 ```bash
 sudo INSTALL_OLLAMA=true START_CONTAINERS=false VOICE_STACK_DIR=/opt/voice-stack \
-  bash <(curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh?nocache=$(date +%s)")
+  bash <(curl -fsSL "https://raw.githubusercontent.com/Sdavid66/clone_voice/HEAD/install_voice_stack.sh?nocache=$(date +%s)")
 ```
 
 ### Exécution locale (script déjà téléchargé)
