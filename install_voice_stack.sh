@@ -15,8 +15,30 @@
 
 set -euo pipefail
 
+if [[ -t 1 ]]; then
+  COLOR_GREEN="\033[32m"
+  COLOR_RED="\033[31m"
+  COLOR_YELLOW="\033[33m"
+  COLOR_BLUE="\033[34m"
+  COLOR_BOLD="\033[1m"
+  COLOR_DIM="\033[2m"
+  COLOR_RESET="\033[0m"
+else
+  COLOR_GREEN=""
+  COLOR_RED=""
+  COLOR_YELLOW=""
+  COLOR_BLUE=""
+  COLOR_BOLD=""
+  COLOR_DIM=""
+  COLOR_RESET=""
+fi
+
+CURRENT_STEP=0
+STEP_SKIPPED=0
+TOTAL_STEPS=0
+
 if [[ "${EUID}" -ne 0 ]]; then
-  echo "[ERREUR] Ce script doit être exécuté avec les droits administrateur (sudo/root)." >&2
+  echo "${COLOR_RED}[ERREUR] Ce script doit être exécuté avec les droits administrateur (sudo/root).${COLOR_RESET}" >&2
   exit 1
 fi
 
@@ -35,12 +57,35 @@ START_CONTAINERS=${START_CONTAINERS:-true}
 INSTALL_OLLAMA=${INSTALL_OLLAMA:-false}
 
 log() {
-  printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
+  printf '      %s[%s]%s %s\n' "${COLOR_DIM}" "$(date '+%H:%M:%S')" "${COLOR_RESET}" "$*"
+}
+
+run_step() {
+  local description="$1"
+  local func="$2"
+
+  CURRENT_STEP=$((CURRENT_STEP + 1))
+  STEP_SKIPPED=0
+
+  printf '\n%s[%d/%d]%s %s%s%s\n' \
+    "${COLOR_BOLD}" "${CURRENT_STEP}" "${TOTAL_STEPS}" "${COLOR_RESET}" "${COLOR_BLUE}" "${description}" "${COLOR_RESET}"
+
+  if "$func"; then
+    if [[ "${STEP_SKIPPED}" -eq 1 ]]; then
+      printf '   ↳ %s⚠ Étape ignorée%s\n' "${COLOR_YELLOW}" "${COLOR_RESET}"
+    else
+      printf '   ↳ %s✔ Succès%s\n' "${COLOR_GREEN}" "${COLOR_RESET}"
+    fi
+  else
+    printf '   ↳ %s✖ Échec%s\n' "${COLOR_RED}" "${COLOR_RESET}"
+    exit 1
+  fi
 }
 
 ensure_packages() {
-  log "Installation des dépendances système..."
+  log "Mise à jour de la liste des paquets APT"
   apt-get update
+  log "Installation des dépendances système"
   apt-get install -y \
     ca-certificates \
     curl \
@@ -53,8 +98,9 @@ ensure_packages() {
 
 install_docker() {
   if command -v docker >/dev/null 2>&1; then
-    log "Docker est déjà installé. Étape ignorée."
-    return
+    log "Docker est déjà installé sur ce système."
+    STEP_SKIPPED=1
+    return 0
   fi
 
   log "Installation du dépôt Docker officiel..."
@@ -79,22 +125,30 @@ ${UBUNTU_CODENAME} stable" \
 
 configure_docker_group() {
   if [[ "${TARGET_USER}" == "root" ]]; then
-    return
+    log "Utilisateur root détecté : aucune modification de groupe nécessaire."
+    STEP_SKIPPED=1
+    return 0
   fi
-  if ! id -nG "${TARGET_USER}" | grep -qw docker; then
-    log "Ajout de l'utilisateur ${TARGET_USER} au groupe docker..."
-    usermod -aG docker "${TARGET_USER}"
-    DOCKER_GROUP_UPDATED=1
+  if id -nG "${TARGET_USER}" | grep -qw docker; then
+    log "L'utilisateur ${TARGET_USER} appartient déjà au groupe docker."
+    STEP_SKIPPED=1
+    return 0
   fi
+
+  log "Ajout de l'utilisateur ${TARGET_USER} au groupe docker..."
+  usermod -aG docker "${TARGET_USER}"
+  DOCKER_GROUP_UPDATED=1
 }
 
 install_ollama() {
   if [[ "${INSTALL_OLLAMA}" != "true" ]]; then
-    return
+    log "INSTALL_OLLAMA=false : Ollama ne sera pas installé."
+    STEP_SKIPPED=1
+    return 0
   fi
 
   if command -v ollama >/dev/null 2>&1; then
-    log "Ollama est déjà installé. Étape ignorée."
+    log "Ollama est déjà installé. Vérification des modèles disponibles."
   else
     log "Installation d'Ollama (mode CPU)..."
     # L'installeur gère automatiquement la détection GPU/CPU. Aucune interaction requise.
@@ -190,12 +244,16 @@ services:
 volumes:
   xtts-cache:
 COMPOSE
+
+  log "Ajustement des permissions sur ${VOICE_STACK_DIR} pour ${TARGET_USER}"
+  chown -R "${TARGET_USER}:${TARGET_USER}" "${VOICE_STACK_DIR}"
 }
 
 build_and_launch_xtts() {
   if [[ "${START_CONTAINERS}" != "true" ]]; then
-    log "START_CONTAINERS=false -> génération des fichiers uniquement."
-    return
+    log "START_CONTAINERS=false : génération des fichiers uniquement."
+    STEP_SKIPPED=1
+    return 0
   fi
 
   log "Construction de l'image XTTS (CPU)..."
@@ -235,16 +293,36 @@ EOF
   fi
 }
 
-main() {
+print_header() {
+  printf '%s=== Installation automatisée de la stack XTTS (CPU) ===%s\n' "${COLOR_BOLD}" "${COLOR_RESET}"
   log "Utilisateur cible : ${TARGET_USER}"
-  ensure_packages
-  install_docker
-  configure_docker_group
-  install_ollama
-  write_xtts_files
-  chown -R "${TARGET_USER}:${TARGET_USER}" "${VOICE_STACK_DIR}"
-  build_and_launch_xtts
-  post_summary
+  log "Répertoire principal : ${VOICE_STACK_DIR}"
+  log "Répertoire XTTS : ${XTTS_DIR}"
+  log "Démarrage automatique des conteneurs : ${START_CONTAINERS}"
+  log "Installation d'Ollama : ${INSTALL_OLLAMA}"
+  printf '\n'
+}
+
+STEPS=(
+  "Installation des dépendances système:::ensure_packages"
+  "Installation ou vérification de Docker:::install_docker"
+  "Configuration du groupe Docker:::configure_docker_group"
+  "Installation optionnelle d'Ollama:::install_ollama"
+  "Préparation des fichiers XTTS:::write_xtts_files"
+  "Construction et lancement des conteneurs XTTS:::build_and_launch_xtts"
+  "Résumé de fin d'installation:::post_summary"
+)
+
+TOTAL_STEPS=${#STEPS[@]}
+
+main() {
+  print_header
+
+  local entry description func
+  for entry in "${STEPS[@]}"; do
+    IFS=':::' read -r description func <<<"${entry}"
+    run_step "${description}" "${func}"
+  done
 }
 
 main "$@"
