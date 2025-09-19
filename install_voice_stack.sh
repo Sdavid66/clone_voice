@@ -5,13 +5,14 @@
 # basé sur XTTS v2 (CPU uniquement) + Docker sur Ubuntu 22.04/24.04.
 #
 # Utilisation recommandée :
-#   curl -fsSL https://exemple/install_voice_stack.sh -o install_voice_stack.sh
-#   sudo bash install_voice_stack.sh
+#   curl -fsSL https://raw.githubusercontent.com/sdavid66/clone_voice/main/install_voice_stack.sh \
+#     | sudo bash -s -- [options]
+#   (ou télécharger le script puis l'exécuter manuellement)
 #
-# Variables optionnelles (à exporter avant exécution) :
-#   INSTALL_OLLAMA=true     # installe Ollama et télécharge un modèle léger (mistral) pour LLM local
-#   START_CONTAINERS=false  # génère les fichiers mais ne lance pas le conteneur XTTS immédiatement
-#   VOICE_STACK_DIR=/opt/voice-stack  # change le dossier cible (par défaut ~/voice-stack)
+# Variables/Options utiles :
+#   --install-ollama / INSTALL_OLLAMA=true  # installe Ollama et télécharge le modèle "mistral"
+#   --no-start / START_CONTAINERS=false     # génère les fichiers sans lancer immédiatement XTTS
+#   --dir <chemin> / VOICE_STACK_DIR=...    # change le dossier cible (par défaut ~/voice-stack)
 
 set -euo pipefail
 
@@ -50,11 +51,86 @@ else
   TARGET_HOME=$(eval echo "~${TARGET_USER}")
 fi
 
-VOICE_STACK_DIR=${VOICE_STACK_DIR:-"${TARGET_HOME}/voice-stack"}
-XTTS_DIR="${VOICE_STACK_DIR}/xtts"
+print_usage() {
+  cat <<'EOF'
+Usage : install_voice_stack.sh [options]
 
-START_CONTAINERS=${START_CONTAINERS:-true}
-INSTALL_OLLAMA=${INSTALL_OLLAMA:-false}
+Options disponibles :
+  --dir <chemin>        Change le répertoire de travail (équivalent à VOICE_STACK_DIR).
+  --install-ollama     Force l'installation d'Ollama (équivalent à INSTALL_OLLAMA=true).
+  --no-ollama          Désactive explicitement l'installation d'Ollama.
+  --no-start           Génère les fichiers sans démarrer docker compose (START_CONTAINERS=false).
+  --start              Force le démarrage des conteneurs (START_CONTAINERS=true).
+  -h, --help           Affiche ce message d'aide et quitte.
+
+Les options en ligne de commande ont priorité sur les variables d'environnement
+éventuellement définies (VOICE_STACK_DIR, START_CONTAINERS, INSTALL_OLLAMA).
+EOF
+}
+
+VOICE_STACK_DIR_DEFAULT="${TARGET_HOME}/voice-stack"
+START_CONTAINERS_DEFAULT="true"
+INSTALL_OLLAMA_DEFAULT="false"
+
+VOICE_STACK_DIR_ENV=${VOICE_STACK_DIR:-}
+START_CONTAINERS_ENV=${START_CONTAINERS:-}
+INSTALL_OLLAMA_ENV=${INSTALL_OLLAMA:-}
+
+VOICE_STACK_DIR_CLI=""
+START_CONTAINERS_CLI=""
+INSTALL_OLLAMA_CLI=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir)
+      if [[ $# -lt 2 ]]; then
+        echo "${COLOR_RED}[ERREUR] L'option --dir nécessite un argument (chemin).${COLOR_RESET}" >&2
+        exit 1
+      fi
+      VOICE_STACK_DIR_CLI="$2"
+      shift 2
+      continue
+      ;;
+    --install-ollama)
+      INSTALL_OLLAMA_CLI="true"
+      ;;
+    --no-ollama|--skip-ollama)
+      INSTALL_OLLAMA_CLI="false"
+      ;;
+    --no-start)
+      START_CONTAINERS_CLI="false"
+      ;;
+    --start)
+      START_CONTAINERS_CLI="true"
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      echo "${COLOR_RED}[ERREUR] Option inconnue : $1${COLOR_RESET}" >&2
+      print_usage >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+VOICE_STACK_DIR=${VOICE_STACK_DIR_CLI:-${VOICE_STACK_DIR_ENV:-${VOICE_STACK_DIR_DEFAULT}}}
+START_CONTAINERS=${START_CONTAINERS_CLI:-${START_CONTAINERS_ENV:-${START_CONTAINERS_DEFAULT}}}
+INSTALL_OLLAMA=${INSTALL_OLLAMA_CLI:-${INSTALL_OLLAMA_ENV:-${INSTALL_OLLAMA_DEFAULT}}}
+
+if [[ $# -gt 0 ]]; then
+  echo "${COLOR_RED}[ERREUR] Arguments inattendus : $*${COLOR_RESET}" >&2
+  print_usage >&2
+  exit 1
+fi
+
+XTTS_DIR="${VOICE_STACK_DIR}/xtts"
 
 log() {
   printf '      %s[%s]%s %s\n' "${COLOR_DIM}" "$(date '+%H:%M:%S')" "${COLOR_RESET}" "$*"
