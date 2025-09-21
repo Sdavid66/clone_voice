@@ -191,10 +191,16 @@ create_lxc_container() {
     --rootfs "${CT_STORAGE}:${CT_DISK_SIZE}" \
     --net0 "name=eth0,bridge=${CT_BRIDGE},ip=dhcp" \
     --password "${CT_PASSWORD}" \
-    --features "docker=1,nesting=1" \
+    --features "nesting=1" \
     --unprivileged 0 \
     --onboot 1 \
     --description "Conteneur LXC pour clonage de voix avec XTTS v2 et Ollama"
+  
+  # Activer Docker après création (méthode alternative)
+  log "Configuration Docker pour le conteneur..."
+  echo "lxc.apparmor.profile: unconfined" >> "/etc/pve/lxc/${CT_VMID}.conf"
+  echo "lxc.cgroup2.devices.allow: a" >> "/etc/pve/lxc/${CT_VMID}.conf"
+  echo "lxc.cap.drop:" >> "/etc/pve/lxc/${CT_VMID}.conf"
 
   success "Conteneur LXC créé avec succès (ID: ${CT_VMID})"
 }
