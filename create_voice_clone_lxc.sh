@@ -182,7 +182,7 @@ download_ubuntu_template() {
 create_lxc_container() {
   log "Création du conteneur LXC '${CT_NAME}' (ID: ${CT_VMID})..."
   
-  # Créer le conteneur avec configuration optimisée
+  # Créer le conteneur avec configuration de base
   pct create "${CT_VMID}" \
     local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
     --hostname "${CT_NAME}" \
@@ -191,16 +191,20 @@ create_lxc_container() {
     --rootfs "${CT_STORAGE}:${CT_DISK_SIZE}" \
     --net0 "name=eth0,bridge=${CT_BRIDGE},ip=dhcp" \
     --password "${CT_PASSWORD}" \
-    --features "nesting=1" \
     --unprivileged 0 \
     --onboot 1 \
     --description "Conteneur LXC pour clonage de voix avec XTTS v2 et Ollama"
   
-  # Activer Docker après création (méthode alternative)
-  log "Configuration Docker pour le conteneur..."
-  echo "lxc.apparmor.profile: unconfined" >> "/etc/pve/lxc/${CT_VMID}.conf"
-  echo "lxc.cgroup2.devices.allow: a" >> "/etc/pve/lxc/${CT_VMID}.conf"
-  echo "lxc.cap.drop:" >> "/etc/pve/lxc/${CT_VMID}.conf"
+  # Configuration Docker après création du conteneur
+  log "Configuration Docker et privilèges pour le conteneur..."
+  
+  # Ajouter les configurations nécessaires pour Docker
+  cat >> "/etc/pve/lxc/${CT_VMID}.conf" << EOF
+lxc.apparmor.profile: unconfined
+lxc.cgroup2.devices.allow: a
+lxc.cap.drop:
+lxc.mount.auto: proc:rw sys:rw
+EOF
 
   success "Conteneur LXC créé avec succès (ID: ${CT_VMID})"
 }
