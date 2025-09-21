@@ -226,24 +226,28 @@ packages:
   - nano
   - openssh-server
   - qemu-guest-agent
-
 runcmd:
   - systemctl enable ssh
   - systemctl start ssh
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
-  - sleep 10
-  - echo "Début installation stack de clonage de voix - $(date)" > /tmp/voice-install.log
-  - sleep 30
-  - echo "Téléchargement du script d'installation..." >> /tmp/voice-install.log 2>&1
-  - wget -O /tmp/install_voice_stack.sh "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh" >> /tmp/voice-install.log 2>&1
+  - echo "=== VM DÉMARRÉE - Attente stabilisation système ===" > /tmp/voice-install.log
+  - echo "$(date): Démarrage des services système..." >> /tmp/voice-install.log
+  - sleep 60
+  - echo "$(date): Système stabilisé, début installation stack de clonage de voix" >> /tmp/voice-install.log
+  - echo "$(date): Téléchargement du script d'installation..." >> /tmp/voice-install.log
+  - wget -O /tmp/install_voice_stack.sh "https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh" >> /tmp/voice-install.log 2>&1 || echo "ERREUR: Échec téléchargement script" >> /tmp/voice-install.log
   - chmod +x /tmp/install_voice_stack.sh
-  - echo "Exécution du script d'installation..." >> /tmp/voice-install.log 2>&1
-  - /tmp/install_voice_stack.sh --install-ollama --dir /opt/voice-stack >> /tmp/voice-install.log 2>&1 || echo "ERREUR lors de l'installation" >> /tmp/voice-install.log 2>&1
-  - echo "Démarrage des services..." >> /tmp/voice-install.log 2>&1
-  - cd /opt/voice-stack/xtts && docker compose up -d >> /tmp/voice-install.log 2>&1 || echo "ERREUR démarrage Docker" >> /tmp/voice-install.log 2>&1
-  - systemctl start ollama >> /tmp/voice-install.log 2>&1 || echo "ERREUR démarrage Ollama" >> /tmp/voice-install.log 2>&1
-  - echo "Installation terminée - $(date)" >> /tmp/voice-install.log
+  - echo "$(date): === DÉBUT INSTALLATION STACK VOICE CLONING ===" >> /tmp/voice-install.log
+  - /tmp/install_voice_stack.sh --install-ollama --dir /opt/voice-stack >> /tmp/voice-install.log 2>&1 || echo "ERREUR: Échec installation stack" >> /tmp/voice-install.log
+  - echo "$(date): === DÉMARRAGE DES SERVICES ===" >> /tmp/voice-install.log
+  - cd /opt/voice-stack/xtts && docker compose up -d >> /tmp/voice-install.log 2>&1 || echo "ERREUR: Échec démarrage Docker XTTS" >> /tmp/voice-install.log
+  - systemctl start ollama >> /tmp/voice-install.log 2>&1 || echo "ERREUR: Échec démarrage Ollama" >> /tmp/voice-install.log
+  - echo "$(date): === VÉRIFICATION DES SERVICES ===" >> /tmp/voice-install.log
+  - sleep 10
+  - curl -s http://localhost:8000/ >> /tmp/voice-install.log 2>&1 && echo "✅ XTTS fonctionne (port 8000)" >> /tmp/voice-install.log || echo "❌ XTTS ne répond pas" >> /tmp/voice-install.log
+  - curl -s http://localhost:11434/api/tags >> /tmp/voice-install.log 2>&1 && echo "✅ Ollama fonctionne (port 11434)" >> /tmp/voice-install.log || echo "❌ Ollama ne répond pas" >> /tmp/voice-install.log
+  - echo "$(date): === INSTALLATION TERMINÉE ===" >> /tmp/voice-install.log
 
 final_message: |
   VM voice-clone prête !
@@ -306,25 +310,59 @@ start_and_wait_vm() {
   qm start "${VM_VMID}"
   
   log "VM démarrée. Installation Ubuntu et stack de clonage en cours..."
-  log "Cela peut prendre 10-15 minutes. Patience..."
+  log "Suivi en temps réel de l'installation (peut prendre 15-20 minutes)..."
   
-  # Attendre que la VM soit prête
-  local max_wait=900  # 15 minutes
+  # Attendre que la VM soit prête avec suivi des logs
+  local max_wait=1200  # 20 minutes
   local wait_time=0
+  local vm_ready=false
+  local last_log_line=""
   
   while [[ $wait_time -lt $max_wait ]]; do
+    # Test si l'agent QEMU répond
     if qm agent "${VM_VMID}" ping >/dev/null 2>&1; then
-      success "VM prête et agent QEMU actif"
+      success "VM prête - Agent QEMU actif"
+      vm_ready=true
       break
     fi
     
-    printf "."
+    # Essayer de lire les logs d'installation si possible
+    local vm_ip
+    vm_ip=$(qm agent "${VM_VMID}" network-get-interfaces 2>/dev/null | grep -oP '(?<="ip-address":")\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
+    
+    if [[ -n "$vm_ip" ]] && nc -z "$vm_ip" 22 2>/dev/null; then
+      # SSH accessible, essayer de lire les logs
+      local current_log
+      current_log=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${VM_USERNAME}@${vm_ip}" "tail -1 /tmp/voice-install.log 2>/dev/null" 2>/dev/null || echo "")
+      
+      if [[ -n "$current_log" && "$current_log" != "$last_log_line" ]]; then
+        log "📋 VM: $current_log"
+        last_log_line="$current_log"
+      fi
+      
+      # Vérifier si l'installation est terminée
+      if echo "$current_log" | grep -q "INSTALLATION TERMINÉE"; then
+        success "Installation terminée avec succès !"
+        vm_ready=true
+        break
+      fi
+    fi
+    
+    # Affichage du progrès
+    if [[ $((wait_time % 60)) -eq 0 ]]; then
+      log "⏱️  Attente... ${wait_time}s/${max_wait}s (Installation en cours dans la VM)"
+    else
+      printf "."
+    fi
+    
     sleep 30
     wait_time=$((wait_time + 30))
   done
   
-  if [[ $wait_time -ge $max_wait ]]; then
-    warning "Timeout atteint. La VM peut encore être en cours d'installation."
+  if [[ "$vm_ready" == "false" ]]; then
+    warning "Timeout atteint après 20 minutes."
+    warning "L'installation peut encore être en cours. Vérifiez manuellement :"
+    warning "ssh ${VM_USERNAME}@${vm_ip} 'tail -f /tmp/voice-install.log'"
   fi
 }
 
