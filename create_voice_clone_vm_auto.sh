@@ -294,12 +294,17 @@ create_vm_with_cloud_init() {
   # Redimensionner le disque
   qm resize "${VM_VMID}" scsi0 "${VM_DISK_SIZE}G"
   
-  # Configurer cloud-init
-  qm set "${VM_VMID}" --cicustom "user=local:snippets/cloud-init-${VM_VMID}.yml"
-  
   # Copier le fichier cloud-init
   mkdir -p /var/lib/vz/snippets/
   cp "${cloud_init_file}" "/var/lib/vz/snippets/cloud-init-${VM_VMID}.yml"
+  
+  # Configurer cloud-init
+  qm set "${VM_VMID}" --cicustom "user=local:snippets/cloud-init-${VM_VMID}.yml"
+  
+  # Configurer les paramètres cloud-init directement
+  qm set "${VM_VMID}" --ciuser "${VM_USERNAME}"
+  qm set "${VM_VMID}" --cipassword "${VM_PASSWORD}"
+  qm set "${VM_VMID}" --ipconfig0 "ip=dhcp"
   
   success "VM créée avec cloud-init (ID: ${VM_VMID})"
 }
@@ -319,38 +324,72 @@ start_and_wait_vm() {
   local last_log_line=""
   
   while [[ $wait_time -lt $max_wait ]]; do
-    # Test si l'agent QEMU répond
+    # Méthode 1: Test agent QEMU
     if qm agent "${VM_VMID}" ping >/dev/null 2>&1; then
       success "VM prête - Agent QEMU actif"
       vm_ready=true
       break
     fi
     
-    # Essayer de lire les logs d'installation si possible
-    local vm_ip
+    # Méthode 2: Obtenir IP via différentes méthodes
+    local vm_ip=""
+    
+    # Essayer via agent QEMU
     vm_ip=$(qm agent "${VM_VMID}" network-get-interfaces 2>/dev/null | grep -oP '(?<="ip-address":")\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
     
-    if [[ -n "$vm_ip" ]] && nc -z "$vm_ip" 22 2>/dev/null; then
-      # SSH accessible, essayer de lire les logs
-      local current_log
-      current_log=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${VM_USERNAME}@${vm_ip}" "tail -1 /tmp/voice-install.log 2>/dev/null" 2>/dev/null || echo "")
-      
-      if [[ -n "$current_log" && "$current_log" != "$last_log_line" ]]; then
-        log "📋 VM: $current_log"
-        last_log_line="$current_log"
+    # Si pas d'IP via agent, essayer via ARP
+    if [[ -z "$vm_ip" ]]; then
+      local vm_mac
+      vm_mac=$(qm config "${VM_VMID}" | grep -oP 'net0:.*,macaddr=([^,]+)' | cut -d'=' -f2 || echo "")
+      if [[ -n "$vm_mac" ]]; then
+        vm_ip=$(arp -a | grep -i "$vm_mac" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
       fi
+    fi
+    
+    # Si pas d'IP via ARP, scanner le réseau local
+    if [[ -z "$vm_ip" ]]; then
+      local network_range
+      network_range=$(ip route | grep -oP '192\.168\.\d+\.0/24' | head -1 || echo "")
+      if [[ -n "$network_range" ]]; then
+        vm_ip=$(nmap -sn "$network_range" 2>/dev/null | grep -B2 "voice-clone" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
+      fi
+    fi
+    
+    if [[ -n "$vm_ip" ]]; then
+      log "🌐 IP VM détectée: $vm_ip"
       
-      # Vérifier si l'installation est terminée
-      if echo "$current_log" | grep -q "INSTALLATION TERMINÉE"; then
-        success "Installation terminée avec succès !"
-        vm_ready=true
-        break
+      # Tester SSH
+      if nc -z "$vm_ip" 22 2>/dev/null; then
+        log "🔐 SSH accessible sur $vm_ip"
+        
+        # Lire les logs d'installation
+        local current_log
+        current_log=$(timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${VM_USERNAME}@${vm_ip}" "tail -1 /tmp/voice-install.log 2>/dev/null" 2>/dev/null || echo "")
+        
+        if [[ -n "$current_log" && "$current_log" != "$last_log_line" ]]; then
+          log "📋 VM: $current_log"
+          last_log_line="$current_log"
+        fi
+        
+        # Vérifier si l'installation est terminée
+        if echo "$current_log" | grep -q "INSTALLATION TERMINÉE"; then
+          success "Installation terminée avec succès !"
+          vm_ready=true
+          break
+        fi
+        
+        # Vérifier les services directement
+        if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${VM_USERNAME}@${vm_ip}" "curl -s http://localhost:8000/ >/dev/null 2>&1" 2>/dev/null; then
+          success "XTTS détecté actif sur port 8000 !"
+          vm_ready=true
+          break
+        fi
       fi
     fi
     
     # Affichage du progrès
     if [[ $((wait_time % 60)) -eq 0 ]]; then
-      log "⏱️  Attente... ${wait_time}s/${max_wait}s (Installation en cours dans la VM)"
+      log "⏱️  Attente... ${wait_time}s/${max_wait}s (IP: ${vm_ip:-"non détectée"}) - Installation en cours"
     else
       printf "."
     fi
@@ -367,8 +406,22 @@ start_and_wait_vm() {
 }
 
 show_final_summary() {
-  local vm_ip
-  vm_ip=$(qm agent "${VM_VMID}" network-get-interfaces 2>/dev/null | grep -oP '(?<="ip-address":")\d+\.\d+\.\d+\.\d+' | head -1 || echo "IP non détectée")
+  local vm_ip=""
+  
+  # Essayer plusieurs méthodes pour obtenir l'IP
+  vm_ip=$(qm agent "${VM_VMID}" network-get-interfaces 2>/dev/null | grep -oP '(?<="ip-address":")\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
+  
+  if [[ -z "$vm_ip" ]]; then
+    local vm_mac
+    vm_mac=$(qm config "${VM_VMID}" | grep -oP 'net0:.*,macaddr=([^,]+)' | cut -d'=' -f2 || echo "")
+    if [[ -n "$vm_mac" ]]; then
+      vm_ip=$(arp -a | grep -i "$vm_mac" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
+    fi
+  fi
+  
+  if [[ -z "$vm_ip" ]]; then
+    vm_ip="IP non détectée - Utilisez: qm terminal ${VM_VMID}"
+  fi
   
   cat <<EOF
 
@@ -405,6 +458,46 @@ ${COLOR_GREEN}Installation automatique terminée !${COLOR_RESET}
 EOF
 }
 
+post_install_diagnostic() {
+  log "🔍 Diagnostic post-installation..."
+  
+  # Obtenir l'IP de la VM
+  local vm_ip=""
+  vm_ip=$(qm agent "${VM_VMID}" network-get-interfaces 2>/dev/null | grep -oP '(?<="ip-address":")\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
+  
+  if [[ -z "$vm_ip" ]]; then
+    local vm_mac
+    vm_mac=$(qm config "${VM_VMID}" | grep -oP 'net0:.*,macaddr=([^,]+)' | cut -d'=' -f2 || echo "")
+    if [[ -n "$vm_mac" ]]; then
+      vm_ip=$(arp -a | grep -i "$vm_mac" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1 || echo "")
+    fi
+  fi
+  
+  if [[ -n "$vm_ip" ]]; then
+    log "🌐 IP VM: $vm_ip"
+    
+    # Test des services
+    if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${VM_USERNAME}@${vm_ip}" "curl -s http://localhost:8000/ >/dev/null 2>&1" 2>/dev/null; then
+      success "✅ XTTS fonctionne (port 8000)"
+    else
+      warning "❌ XTTS ne répond pas sur le port 8000"
+    fi
+    
+    if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${VM_USERNAME}@${vm_ip}" "curl -s http://localhost:11434/api/tags >/dev/null 2>&1" 2>/dev/null; then
+      success "✅ Ollama fonctionne (port 11434)"
+    else
+      warning "❌ Ollama ne répond pas sur le port 11434"
+    fi
+    
+    # Afficher les dernières lignes du log
+    log "📋 Dernières lignes du log d'installation:"
+    timeout 10 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${VM_USERNAME}@${vm_ip}" "tail -5 /tmp/voice-install.log 2>/dev/null" 2>/dev/null || log "Impossible de lire les logs"
+  else
+    warning "❌ Impossible de détecter l'IP de la VM"
+    log "💡 Utilisez: qm terminal ${VM_VMID} pour accéder à la console"
+  fi
+}
+
 main() {
   printf '%s=== Installation automatique VM voice-clone ===%s\n\n' "${COLOR_BOLD}" "${COLOR_RESET}"
   
@@ -414,6 +507,7 @@ main() {
   create_cloud_init_config
   create_vm_with_cloud_init
   start_and_wait_vm
+  post_install_diagnostic
   show_final_summary
 }
 
