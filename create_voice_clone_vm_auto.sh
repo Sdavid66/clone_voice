@@ -225,10 +225,14 @@ packages:
   - htop
   - nano
   - openssh-server
+  - qemu-guest-agent
 
 runcmd:
   - systemctl enable ssh
   - systemctl start ssh
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent
+  - sleep 10
   - echo "Début installation stack de clonage de voix - $(date)" > /tmp/voice-install.log
   - sleep 30
   - echo "Téléchargement du script d'installation..." >> /tmp/voice-install.log 2>&1
