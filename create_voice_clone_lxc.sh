@@ -302,6 +302,42 @@ start_and_install() {
   warning "⚠️ Timeout d'installation atteint. Vérifiez les logs manuellement."
 }
 
+configure_autostart() {
+  log "🔧 Configuration du démarrage automatique des services..."
+  
+  # Créer un service systemd pour démarrer XTTS automatiquement
+  pct exec "${CT_VMID}" -- bash -c "
+cat > /etc/systemd/system/voice-stack.service << 'EOF'
+[Unit]
+Description=Voice Stack XTTS Service
+Requires=docker.service
+After=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/voice-stack/xtts
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Activer le service
+systemctl daemon-reload
+systemctl enable voice-stack.service
+systemctl enable docker.service >/dev/null 2>&1
+
+echo 'Service voice-stack configuré pour démarrage automatique'
+"
+  
+  success "✅ Démarrage automatique configuré"
+}
+
 test_services() {
   log "🔍 Test des services installés..."
   
@@ -381,6 +417,7 @@ main() {
   download_ubuntu_template
   create_lxc_container
   start_and_install
+  configure_autostart
   test_services
   show_final_summary
 }

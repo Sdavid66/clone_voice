@@ -361,15 +361,15 @@ APP
 services:
   xtts:
     build: .
-    image: local/xtts:v1
     ports:
       - "8000:8000"
     volumes:
-      - xtts-cache:/root/.local/share/tts
+      - "./voices:/app/voices"
+      - "./outputs:/app/outputs"
     environment:
       - PYTHONUNBUFFERED=1
-volumes:
-  xtts-cache:
+    restart: always
+    depends_on: []
 COMPOSE
 
   log "Ajustement des permissions sur ${VOICE_STACK_DIR} pour ${TARGET_USER}"
