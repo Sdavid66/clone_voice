@@ -283,7 +283,7 @@ FROM python:3.11-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg git && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir TTS fastapi uvicorn pydub soundfile numpy
+RUN pip install --no-cache-dir TTS fastapi uvicorn pydub soundfile numpy python-multipart
 WORKDIR /app
 COPY app.py /app/app.py
 EXPOSE 8000
