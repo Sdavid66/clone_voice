@@ -44,7 +44,7 @@ CT_VMID=""
 CT_PASSWORD="VoiceClone2024!"
 
 log() {
-  printf '%s[%s]%s %s\n' "${COLOR_DIM}" "$(date '+%H:%M:%S')" "${COLOR_RESET}" "$*"
+  printf '%s[%s] [CT:%s]%s %s\n' "${COLOR_GREEN}" "$(date '+%H:%M:%S')" "${CT_VMID:-"---"}" "${COLOR_RESET}" "$*"
 }
 
 error() {
@@ -210,29 +210,96 @@ EOF
 }
 
 start_and_install() {
-  log "Démarrage du conteneur et installation de la stack..."
+  log "🚀 Démarrage du conteneur CT:${CT_VMID} et installation de la stack..."
   
   # Démarrer le conteneur
+  log "📋 Démarrage du conteneur LXC..."
   pct start "${CT_VMID}"
   
-  # Attendre que le conteneur soit prêt
-  log "Attente du démarrage complet du conteneur..."
+  # Attendre que le conteneur soit prêt avec vérification
+  log "⏱️ Attente du démarrage complet du conteneur (15s)..."
   sleep 15
   
+  # Vérifier que le conteneur est bien démarré
+  if ! pct status "${CT_VMID}" | grep -q "running"; then
+    error "Le conteneur n'a pas démarré correctement"
+    exit 1
+  fi
+  
+  log "✅ Conteneur démarré avec succès"
+  
+  log "📦 Mise à jour des paquets du système..."
+  pct exec "${CT_VMID}" -- apt update -y
+  
   log "📦 Installation des dépendances de base..."
-  pct exec "${CT_VMID}" -- apt update
   pct exec "${CT_VMID}" -- apt install -y curl wget git htop nano
   
-  log "🚀 Installation de la stack de clonage de voix..."
+  log "🌐 Obtention de l'IP du conteneur..."
+  local ct_ip
+  ct_ip=$(pct exec "${CT_VMID}" -- hostname -I | awk '{print $1}' || echo "")
+  if [[ -n "$ct_ip" ]]; then
+    log "🌐 IP du conteneur: $ct_ip"
+  else
+    warning "IP du conteneur non détectée"
+  fi
+  
+  log "🚀 Téléchargement du script d'installation de la stack..."
   pct exec "${CT_VMID}" -- bash -c "
     echo '=== DÉBUT INSTALLATION STACK - $(date) ===' > /tmp/voice-install.log
+    echo 'Téléchargement du script...' >> /tmp/voice-install.log
     curl -fsSL 'https://raw.githubusercontent.com/Sdavid66/clone_voice/main/install_voice_stack.sh' -o /tmp/install_voice_stack.sh >> /tmp/voice-install.log 2>&1
+    echo 'Script téléchargé, chmod +x...' >> /tmp/voice-install.log
     chmod +x /tmp/install_voice_stack.sh
-    /tmp/install_voice_stack.sh --install-ollama --dir /opt/voice-stack >> /tmp/voice-install.log 2>&1
-    echo '=== INSTALLATION TERMINÉE - $(date) ===' >> /tmp/voice-install.log
+    echo 'Début exécution du script d installation...' >> /tmp/voice-install.log
   "
   
-  success "Installation de la stack terminée"
+  log "⚙️ Exécution de l'installation de la stack (cela peut prendre 10-15 minutes)..."
+  log "📋 Suivi des logs en temps réel..."
+  
+  # Exécuter l'installation en arrière-plan et suivre les logs
+  pct exec "${CT_VMID}" -- bash -c "
+    /tmp/install_voice_stack.sh --install-ollama --dir /opt/voice-stack >> /tmp/voice-install.log 2>&1 &
+    INSTALL_PID=\$!
+    echo \"PID d'installation: \$INSTALL_PID\" >> /tmp/voice-install.log
+    
+    # Attendre la fin de l'installation
+    while kill -0 \$INSTALL_PID 2>/dev/null; do
+      echo \"Installation en cours... \$(date)\" >> /tmp/voice-install.log
+      sleep 30
+    done
+    
+    echo '=== INSTALLATION TERMINÉE - $(date) ===' >> /tmp/voice-install.log
+  " &
+  
+  # Suivre les logs pendant l'installation
+  local install_time=0
+  local max_install_time=1200  # 20 minutes max
+  
+  while [[ $install_time -lt $max_install_time ]]; do
+    sleep 30
+    install_time=$((install_time + 30))
+    
+    # Lire la dernière ligne du log
+    local last_log
+    last_log=$(pct exec "${CT_VMID}" -- tail -1 /tmp/voice-install.log 2>/dev/null || echo "")
+    
+    if [[ -n "$last_log" ]]; then
+      log "📋 CT:${CT_VMID} - $last_log"
+    fi
+    
+    # Vérifier si l'installation est terminée
+    if pct exec "${CT_VMID}" -- grep -q "INSTALLATION TERMINÉE" /tmp/voice-install.log 2>/dev/null; then
+      success "✅ Installation de la stack terminée avec succès!"
+      return
+    fi
+    
+    # Afficher le progrès
+    if [[ $((install_time % 120)) -eq 0 ]]; then
+      log "⏱️ Installation en cours... ${install_time}s/${max_install_time}s"
+    fi
+  done
+  
+  warning "⚠️ Timeout d'installation atteint. Vérifiez les logs manuellement."
 }
 
 test_services() {
