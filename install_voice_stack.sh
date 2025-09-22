@@ -281,9 +281,23 @@ write_xtts_files() {
   cat <<'DOCKERFILE' >"${XTTS_DIR}/Dockerfile"
 FROM python:3.11-slim
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg git && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir TTS fastapi uvicorn pydub soundfile numpy python-multipart
+
+# Installer les dépendances système et nettoyer immédiatement
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg git build-essential pkg-config \
+    && pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir \
+        fastapi uvicorn python-multipart \
+        pydub soundfile numpy \
+    && pip install --no-cache-dir TTS \
+    && apt-get remove -y build-essential pkg-config \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip cache purge \
+    && find /usr/local -name "*.pyc" -delete \
+    && find /usr/local -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
 WORKDIR /app
 COPY app.py /app/app.py
 EXPOSE 8000

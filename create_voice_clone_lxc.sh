@@ -37,7 +37,7 @@ fi
 CT_NAME="voice-clone-lxc"
 CT_MEMORY=4096       # 4GB RAM (suffisant pour LXC)
 CT_CORES=4           # 4 cœurs CPU
-CT_DISK_SIZE=30      # 30GB disque (suffisant)
+CT_DISK_SIZE=50      # 50GB disque (nécessaire pour TTS + dépendances)
 CT_STORAGE="local-lvm"
 CT_BRIDGE="vmbr0"
 CT_VMID=""
