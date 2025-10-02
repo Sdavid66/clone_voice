@@ -32,8 +32,8 @@ Les options ont priorité sur les variables (pratique pour l'exécution en "one-
 Exemple : ne pas démarrer le service immédiatement et installer Ollama dans `/opt/voice-stack` :
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/sdavid66/clone_voice/main/install_voice_stack.sh?nocache=$(date +%s)" \
-  | sudo bash -s -- --install-ollama --no-start --dir /opt/voice-stack
+curl -fsSL "https://raw.githubusercontent.com/sdavid66/clone_voice/main/create_voice_clone_lxc.sh?nocache=$(date +%s)" | bash -s --
+
 ```
 
 ### Exécution locale (script déjà téléchargé)
