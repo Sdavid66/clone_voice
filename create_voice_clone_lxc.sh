@@ -35,7 +35,7 @@ fi
 
 # Configuration par défaut
 CT_NAME="voice-clone-lxc"
-CT_MEMORY=4096       # 4GB RAM (suffisant pour LXC)
+CT_MEMORY=6000       # 4GB RAM (suffisant pour LXC)
 CT_CORES=4           # 4 cœurs CPU
 CT_DISK_SIZE=50      # 50GB disque (nécessaire pour TTS + dépendances)
 CT_STORAGE="local-lvm"
@@ -69,7 +69,7 @@ pour le clonage de voix avec installation complète de la stack XTTS.
 Options disponibles :
   --vmid <id>           ID du conteneur (par défaut: auto-détection)
   --storage <name>      Stockage pour le conteneur (par défaut: local-lvm)
-  --memory <MB>         RAM en MB (par défaut: 4096 = 4GB)
+  --memory <MB>         RAM en MB (par défaut: 6000 = 6GB)
   --cores <num>         Nombre de cœurs CPU (par défaut: 4)
   --disk <GB>           Taille du disque en GB (par défaut: 30)
   --bridge <name>       Bridge réseau (par défaut: vmbr0)
